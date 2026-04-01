@@ -1,0 +1,5 @@
+{
+  "name": "Smart Classroom",
+  "description": "Premium Video Conferencing Platform for Students and Professors",
+  "requestFramePermissions": ["camera", "microphone"]
+}
