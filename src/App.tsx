@@ -364,10 +364,17 @@ export default function App() {
         <audio 
           ref={audioRef}
           loop
-          onCanPlayThrough={() => setAudioLoaded(true)}
-          onError={() => {
-            if (audioRef.current) {
+          crossOrigin="anonymous"
+          onCanPlayThrough={() => {
+            console.log("Audio can play through");
+            setAudioLoaded(true);
+          }}
+          onError={(e) => {
+            console.error("Audio error event:", e);
+            if (audioRef.current && audioRef.current.src !== "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3") {
+              console.log("Switching to fallback audio...");
               audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+              audioRef.current.load();
             }
           }}
         >
