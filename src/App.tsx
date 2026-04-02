@@ -185,7 +185,11 @@ export default function App() {
 
     conn.on('open', () => {
       try {
-        conn.send({ type: "HANDSHAKE", name: currentUserName });
+        // Ensure we only send a plain object with serializable values
+        conn.send({ 
+          type: "HANDSHAKE", 
+          name: String(currentUserName) 
+        });
       } catch (err) {
         console.error("Erreur lors de l'envoi du handshake:", err);
       }
@@ -290,12 +294,14 @@ export default function App() {
   const leverMain = () => {
     const newHandState = !handRaised;
     setHandRaised(newHandState);
+    const currentPeerId = peerRef.current?.id || "";
     activeConnectionsRef.current.forEach(c => {
       try {
+        // Ensure we only send a plain object with serializable values
         c.send({
           type: newHandState ? "HAND_RAISE" : "HAND_DOWN",
-          name: userName,
-          peerId: peerRef.current?.id || ""
+          name: String(userName),
+          peerId: String(currentPeerId)
         });
       } catch (err) {
         console.error("Erreur lors de l'envoi du signal de main levée:", err);
@@ -320,7 +326,7 @@ export default function App() {
     const message = `${userName}: ${chatInput}`;
     activeConnectionsRef.current.forEach(c => {
       try {
-        c.send(message);
+        c.send(String(message));
       } catch (err) {
         console.error("Erreur lors de l'envoi du message chat:", err);
       }
@@ -337,7 +343,8 @@ export default function App() {
     const conn = activeConnectionsRef.current.find(c => c.peer === id);
     if (conn) {
       try {
-        conn.send({ type });
+        // Ensure we only send a plain object with serializable values
+        conn.send({ type: String(type) });
       } catch (err) {
         console.error("Erreur action admin:", err);
       }
@@ -366,11 +373,14 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const url = event.target?.result as string;
-      const data: PeerData = { type: "PPT_ON", url };
       setPptUrl(url);
       activeConnectionsRef.current.forEach(c => {
         try {
-          c.send(data);
+          // Ensure we only send a plain object with serializable values
+          c.send({ 
+            type: "PPT_ON", 
+            url: String(url) 
+          });
         } catch (err) {
           console.error("Erreur lors de l'envoi du document:", err);
         }

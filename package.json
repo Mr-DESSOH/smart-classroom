@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "homepage": "https://mr-dessoh.github.io/smart-classroom/",
+  "homepage": ".",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
