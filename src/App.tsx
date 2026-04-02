@@ -64,26 +64,36 @@ export default function App() {
 
   useEffect(() => {
     // Prepare Kora sound
-    const koraUrl = "https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3";
-    audioRef.current = new Audio(koraUrl);
+    const koraUrl = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3"; // Fallback for testing
+    // Try to find a better Kora URL or use a more reliable one
+    const realKoraUrl = "https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3";
+    
+    audioRef.current = new Audio(realKoraUrl);
     audioRef.current.loop = true;
     audioRef.current.volume = 1.0;
     audioRef.current.preload = "auto";
     
-    audioRef.current.addEventListener('canplaythrough', () => {
+    const handleCanPlay = () => {
       console.log("Kora audio loaded and ready");
-    });
+    };
 
-    audioRef.current.addEventListener('error', (e) => {
+    const handleError = (e: any) => {
       console.error("Kora audio error:", e);
-      // Fallback if initial load fails
-      if (audioRef.current) {
-        audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+      // If Pixabay fails, try the fallback immediately
+      if (audioRef.current && audioRef.current.src !== koraUrl) {
+        console.log("Switching to fallback audio...");
+        audioRef.current.src = koraUrl;
+        audioRef.current.load();
       }
-    });
+    };
+
+    audioRef.current.addEventListener('canplaythrough', handleCanPlay);
+    audioRef.current.addEventListener('error', handleError);
 
     return () => {
       audioRef.current?.pause();
+      audioRef.current?.removeEventListener('canplaythrough', handleCanPlay);
+      audioRef.current?.removeEventListener('error', handleError);
       peerRef.current?.destroy();
       localStreamRef.current?.getTracks().forEach(track => track.stop());
     };
@@ -92,16 +102,16 @@ export default function App() {
   const playKora = () => {
     if (audioRef.current) {
       audioRef.current.volume = 1.0;
-      audioRef.current.play().then(() => {
-        console.log("Audio playing successfully");
-      }).catch(e => {
-        console.error("Audio play blocked or failed:", e);
-        // Try a different source if the first one fails
-        if (audioRef.current) {
-          audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
-          audioRef.current.play().catch(err => console.error("Fallback audio failed:", err));
-        }
-      });
+      const playPromise = audioRef.current.play();
+      
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log("Audio playing successfully");
+        }).catch(e => {
+          console.error("Audio play blocked or failed:", e);
+          // If it's a block, we might need another user interaction
+        });
+      }
     }
   };
 
@@ -408,7 +418,7 @@ export default function App() {
               className="text-[10px] text-blue-400/50 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
             >
               <Radio className="w-3 h-3 animate-pulse" />
-              Cliquer ici si vous n'entendez pas la Kora 🎵
+              Tester le son (Kora) 🎵
             </button>
           </div>
         </div>
