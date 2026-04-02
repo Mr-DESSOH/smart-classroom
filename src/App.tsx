@@ -34,6 +34,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [splashFade, setSplashFade] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioLoaded, setAudioLoaded] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [tempSessionId, setTempSessionId] = useState("");
   const [tempModCode, setTempModCode] = useState("");
@@ -63,37 +64,8 @@ export default function App() {
   const chatBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Prepare Kora sound
-    const koraUrl = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3"; // Fallback for testing
-    // Try to find a better Kora URL or use a more reliable one
-    const realKoraUrl = "https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3";
-    
-    audioRef.current = new Audio(realKoraUrl);
-    audioRef.current.loop = true;
-    audioRef.current.volume = 1.0;
-    audioRef.current.preload = "auto";
-    
-    const handleCanPlay = () => {
-      console.log("Kora audio loaded and ready");
-    };
-
-    const handleError = (e: any) => {
-      console.error("Kora audio error:", e);
-      // If Pixabay fails, try the fallback immediately
-      if (audioRef.current && audioRef.current.src !== koraUrl) {
-        console.log("Switching to fallback audio...");
-        audioRef.current.src = koraUrl;
-        audioRef.current.load();
-      }
-    };
-
-    audioRef.current.addEventListener('canplaythrough', handleCanPlay);
-    audioRef.current.addEventListener('error', handleError);
-
+    // Kora sound is handled by the <audio> element in the DOM
     return () => {
-      audioRef.current?.pause();
-      audioRef.current?.removeEventListener('canplaythrough', handleCanPlay);
-      audioRef.current?.removeEventListener('error', handleError);
       peerRef.current?.destroy();
       localStreamRef.current?.getTracks().forEach(track => track.stop());
     };
@@ -102,16 +74,11 @@ export default function App() {
   const playKora = () => {
     if (audioRef.current) {
       audioRef.current.volume = 1.0;
-      const playPromise = audioRef.current.play();
-      
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          console.log("Audio playing successfully");
-        }).catch(e => {
-          console.error("Audio play blocked or failed:", e);
-          // If it's a block, we might need another user interaction
-        });
-      }
+      audioRef.current.play().then(() => {
+        console.log("Audio playing successfully");
+      }).catch(e => {
+        console.error("Audio play blocked or failed:", e);
+      });
     }
   };
 
@@ -394,6 +361,18 @@ export default function App() {
   if (showSplash) {
     return (
       <div className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-1000 ${splashFade ? 'opacity-0' : 'opacity-100'}`}>
+        <audio 
+          ref={audioRef}
+          loop
+          onCanPlayThrough={() => setAudioLoaded(true)}
+          onError={() => {
+            if (audioRef.current) {
+              audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+            }
+          }}
+        >
+          <source src="https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3" type="audio/mpeg" />
+        </audio>
         <div className="text-center px-4">
           <img 
             src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1920&auto=format&fit=crop" 
@@ -417,8 +396,8 @@ export default function App() {
               onClick={playKora}
               className="text-[10px] text-blue-400/50 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
             >
-              <Radio className="w-3 h-3 animate-pulse" />
-              Tester le son (Kora) 🎵
+              <Radio className={`w-3 h-3 ${audioLoaded ? 'animate-pulse' : 'animate-spin'}`} />
+              {audioLoaded ? 'Tester le son (Kora) 🎵' : 'Chargement du son...'}
             </button>
           </div>
         </div>
