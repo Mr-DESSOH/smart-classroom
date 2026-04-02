@@ -34,6 +34,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [splashFade, setSplashFade] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
   const [audioLoaded, setAudioLoaded] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [tempSessionId, setTempSessionId] = useState("");
@@ -74,10 +75,14 @@ export default function App() {
   const playKora = () => {
     if (audioRef.current) {
       audioRef.current.volume = 1.0;
-      audioRef.current.play().then(() => {
+      // Store the promise to handle potential race conditions with pause()
+      playPromiseRef.current = audioRef.current.play();
+      playPromiseRef.current.then(() => {
         console.log("Audio playing successfully");
+        playPromiseRef.current = null;
       }).catch(e => {
         console.error("Audio play blocked or failed:", e);
+        playPromiseRef.current = null;
       });
     }
   };
@@ -98,8 +103,19 @@ export default function App() {
 
   const handleJoin = async () => {
     if (!userName.trim()) return alert("Veuillez entrer votre nom.");
-    // Ensure audio stops when entering the classroom to avoid noise during call
-    audioRef.current?.pause();
+    
+    // Safely pause audio by waiting for any pending play promise
+    if (playPromiseRef.current) {
+      playPromiseRef.current.then(() => {
+        audioRef.current?.pause();
+      }).catch(() => {
+        // If play failed, we can still try to pause or just ignore
+        audioRef.current?.pause();
+      });
+    } else {
+      audioRef.current?.pause();
+    }
+
     setIsJoined(true);
     await init(userName);
   };
@@ -185,11 +201,12 @@ export default function App() {
 
     conn.on('open', () => {
       try {
-        // Ensure we only send a plain object with serializable values
-        conn.send({ 
-          type: "HANDSHAKE", 
+        // Explicitly create a clean, non-circular object
+        const handshakeData = { 
+          type: "HANDSHAKE" as const, 
           name: String(currentUserName) 
-        });
+        };
+        conn.send(handshakeData);
       } catch (err) {
         console.error("Erreur lors de l'envoi du handshake:", err);
       }
@@ -297,12 +314,13 @@ export default function App() {
     const currentPeerId = peerRef.current?.id || "";
     activeConnectionsRef.current.forEach(c => {
       try {
-        // Ensure we only send a plain object with serializable values
-        c.send({
-          type: newHandState ? "HAND_RAISE" : "HAND_DOWN",
+        // Explicitly create a clean, non-circular object
+        const signalData = {
+          type: (newHandState ? "HAND_RAISE" : "HAND_DOWN") as any,
           name: String(userName),
           peerId: String(currentPeerId)
-        });
+        };
+        c.send(signalData);
       } catch (err) {
         console.error("Erreur lors de l'envoi du signal de main levée:", err);
       }
@@ -343,8 +361,9 @@ export default function App() {
     const conn = activeConnectionsRef.current.find(c => c.peer === id);
     if (conn) {
       try {
-        // Ensure we only send a plain object with serializable values
-        conn.send({ type: String(type) });
+        // Explicitly create a clean, non-circular object
+        const actionData = { type: String(type) as any };
+        conn.send(actionData);
       } catch (err) {
         console.error("Erreur action admin:", err);
       }
@@ -376,11 +395,12 @@ export default function App() {
       setPptUrl(url);
       activeConnectionsRef.current.forEach(c => {
         try {
-          // Ensure we only send a plain object with serializable values
-          c.send({ 
-            type: "PPT_ON", 
+          // Explicitly create a clean, non-circular object
+          const docData = { 
+            type: "PPT_ON" as const, 
             url: String(url) 
-          });
+          };
+          c.send(docData);
         } catch (err) {
           console.error("Erreur lors de l'envoi du document:", err);
         }
@@ -393,7 +413,9 @@ export default function App() {
     setPptUrl(null);
     activeConnectionsRef.current.forEach(c => {
       try {
-        c.send({ type: "PPT_OFF" });
+        // Explicitly create a clean, non-circular object
+        const offData = { type: "PPT_OFF" as const };
+        c.send(offData);
       } catch (err) {
         console.error("Erreur fermeture document:", err);
       }
