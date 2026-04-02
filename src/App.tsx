@@ -184,7 +184,11 @@ export default function App() {
     }
 
     conn.on('open', () => {
-      conn.send({ type: "HANDSHAKE", name: currentUserName });
+      try {
+        conn.send({ type: "HANDSHAKE", name: currentUserName });
+      } catch (err) {
+        console.error("Erreur lors de l'envoi du handshake:", err);
+      }
     });
 
     conn.on('data', (data: any) => {
@@ -287,11 +291,15 @@ export default function App() {
     const newHandState = !handRaised;
     setHandRaised(newHandState);
     activeConnectionsRef.current.forEach(c => {
-      c.send({
-        type: newHandState ? "HAND_RAISE" : "HAND_DOWN",
-        name: userName,
-        peerId: peerRef.current?.id
-      });
+      try {
+        c.send({
+          type: newHandState ? "HAND_RAISE" : "HAND_DOWN",
+          name: userName,
+          peerId: peerRef.current?.id || ""
+        });
+      } catch (err) {
+        console.error("Erreur lors de l'envoi du signal de main levée:", err);
+      }
     });
   };
 
@@ -310,7 +318,13 @@ export default function App() {
   const envoyerMessage = () => {
     if (!chatInput.trim()) return;
     const message = `${userName}: ${chatInput}`;
-    activeConnectionsRef.current.forEach(c => c.send(message));
+    activeConnectionsRef.current.forEach(c => {
+      try {
+        c.send(message);
+      } catch (err) {
+        console.error("Erreur lors de l'envoi du message chat:", err);
+      }
+    });
     addChat(chatInput, 'moi', userName);
     setChatInput("");
   };
@@ -321,7 +335,13 @@ export default function App() {
 
   const adminAction = (id: string, type: PeerData['type']) => {
     const conn = activeConnectionsRef.current.find(c => c.peer === id);
-    if (conn) conn.send({ type });
+    if (conn) {
+      try {
+        conn.send({ type });
+      } catch (err) {
+        console.error("Erreur action admin:", err);
+      }
+    }
   };
 
   const accepterEtudiant = (id: string, name: string) => {
@@ -348,114 +368,121 @@ export default function App() {
       const url = event.target?.result as string;
       const data: PeerData = { type: "PPT_ON", url };
       setPptUrl(url);
-      activeConnectionsRef.current.forEach(c => c.send(data));
+      activeConnectionsRef.current.forEach(c => {
+        try {
+          c.send(data);
+        } catch (err) {
+          console.error("Erreur lors de l'envoi du document:", err);
+        }
+      });
     };
     reader.readAsDataURL(file);
   };
 
   const fermerDocument = () => {
     setPptUrl(null);
-    activeConnectionsRef.current.forEach(c => c.send({ type: "PPT_OFF" }));
+    activeConnectionsRef.current.forEach(c => {
+      try {
+        c.send({ type: "PPT_OFF" });
+      } catch (err) {
+        console.error("Erreur fermeture document:", err);
+      }
+    });
   };
 
-  if (showSplash) {
-    return (
-      <div className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-1000 ${splashFade ? 'opacity-0' : 'opacity-100'}`}>
-        <audio 
-          ref={audioRef}
-          loop
-          crossOrigin="anonymous"
-          onCanPlayThrough={() => {
-            console.log("Audio can play through");
-            setAudioLoaded(true);
-          }}
-          onError={(e) => {
-            console.error("Audio error event:", e);
-            if (audioRef.current && audioRef.current.src !== "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3") {
-              console.log("Switching to fallback audio...");
-              audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
-              audioRef.current.load();
-            }
-          }}
-        >
-          <source src="https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3" type="audio/mpeg" />
-        </audio>
-        <div className="text-center px-4">
-          <img 
-            src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1920&auto=format&fit=crop" 
-            alt="Smart Classroom African Collaboration" 
-            className="w-full max-w-4xl rounded-3xl shadow-2xl border border-white/10 mb-8 object-cover aspect-video"
-            referrerPolicy="no-referrer"
-          />
-          <h1 className="text-blue-500 font-extrabold text-5xl md:text-7xl tracking-tighter italic mb-2">Smart Classroom</h1>
-          <p className="text-gray-500 text-sm font-bold uppercase tracking-[0.5em] mb-8">L'excellence au cœur de l'Afrique</p>
-          
-          <div className="mt-8 flex flex-col items-center gap-6">
-            <button 
-              onClick={startApp}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-16 py-5 rounded-full font-black text-xl uppercase tracking-widest transition-all shadow-2xl shadow-blue-900/40 animate-bounce flex items-center gap-3"
-            >
-              <LogIn className="w-6 h-6" />
-              Commencer
-            </button>
+  return (
+    <div className="min-h-screen bg-[#050505] text-white overflow-hidden font-sans selection:bg-blue-500/30">
+      <audio 
+        ref={audioRef}
+        loop
+        crossOrigin="anonymous"
+        onCanPlayThrough={() => {
+          console.log("Audio can play through");
+          setAudioLoaded(true);
+        }}
+        onError={(e) => {
+          console.error("Audio error event:", e);
+          if (audioRef.current && audioRef.current.src !== "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3") {
+            console.log("Switching to fallback audio...");
+            audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+            audioRef.current.load();
+          }
+        }}
+      >
+        <source src="https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3" type="audio/mpeg" />
+      </audio>
+
+      {showSplash ? (
+        <div className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-1000 ${splashFade ? 'opacity-0' : 'opacity-100'}`}>
+          <div className="text-center px-4">
+            <img 
+              src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1920&auto=format&fit=crop" 
+              alt="Smart Classroom African Collaboration" 
+              className="w-full max-w-4xl rounded-3xl shadow-2xl border border-white/10 mb-8 object-cover aspect-video"
+              referrerPolicy="no-referrer"
+            />
+            <h1 className="text-blue-500 font-extrabold text-5xl md:text-7xl tracking-tighter italic mb-2">Smart Classroom</h1>
+            <p className="text-gray-500 text-sm font-bold uppercase tracking-[0.5em] mb-8">L'excellence au cœur de l'Afrique</p>
             
-            <button 
-              onClick={playKora}
-              className="text-[10px] text-blue-400/50 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
-            >
-              <Radio className={`w-3 h-3 ${audioLoaded ? 'animate-pulse' : 'animate-spin'}`} />
-              {audioLoaded ? 'Tester le son (Kora) 🎵' : 'Chargement du son...'}
-            </button>
+            <div className="mt-8 flex flex-col items-center gap-6">
+              <button 
+                onClick={startApp}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-16 py-5 rounded-full font-black text-xl uppercase tracking-widest transition-all shadow-2xl shadow-blue-900/40 animate-bounce flex items-center gap-3"
+              >
+                <LogIn className="w-6 h-6" />
+                Commencer
+              </button>
+              
+              <button 
+                onClick={playKora}
+                className="text-[10px] text-blue-400/50 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
+              >
+                <Radio className={`w-3 h-3 ${audioLoaded ? 'animate-pulse' : 'animate-spin'}`} />
+                {audioLoaded ? 'Tester le son (Kora) 🎵' : 'Chargement du son...'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (!isJoined) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4">
-        <div className="glass-panel p-8 rounded-3xl w-full max-w-md border border-white/10 shadow-2xl">
-          <div className="text-center mb-8">
-            <span className="text-blue-500 font-extrabold text-4xl tracking-tighter italic">Smart Classroom</span>
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mt-2">Elite Edition v21</p>
-          </div>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">Votre Identité</label>
-              <div className="relative flex items-center">
-                <User className="absolute left-4 w-5 h-5 text-gray-500" />
-                <input
-                  type="text"
-                  value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
-                  placeholder="Nom et Prénom"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all"
-                />
+      ) : !isJoined ? (
+        <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4">
+          <div className="glass-panel p-8 rounded-3xl w-full max-w-md border border-white/10 shadow-2xl">
+            <div className="text-center mb-8">
+              <span className="text-blue-500 font-extrabold text-4xl tracking-tighter italic">Smart Classroom</span>
+              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mt-2">Elite Edition v21</p>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">Votre Identité</label>
+                <div className="relative flex items-center">
+                  <User className="absolute left-4 w-5 h-5 text-gray-500" />
+                  <input
+                    type="text"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    placeholder="Nom et Prénom"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all"
+                  />
+                </div>
               </div>
+
+              <button
+                onClick={handleJoin}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-blue-900/40"
+              >
+                Démarrer la Session
+              </button>
             </div>
 
-            <button
-              onClick={handleJoin}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-blue-900/40"
-            >
-              Démarrer la Session
-            </button>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-white/5 text-center">
-            <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
-              Plateforme de visioconférence sécurisée<br/>pour l'excellence académique
-            </p>
+            <div className="mt-8 pt-6 border-t border-white/5 text-center">
+              <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                Plateforme de visioconférence sécurisée<br/>pour l'excellence académique
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="text-gray-200 min-h-screen flex flex-col overflow-hidden bg-[#050505]">
+      ) : (
+        <div className="text-gray-200 min-h-screen flex flex-col overflow-hidden bg-[#050505]">
       {/* Modal Réglages */}
       {showSettingsModal && (
         <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -789,5 +816,7 @@ export default function App() {
         )}
       </footer>
     </div>
+  )}
+</div>
   );
 }
