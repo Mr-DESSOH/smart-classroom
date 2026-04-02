@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState, ChangeEvent } from 'react';
 import { Peer, DataConnection, MediaConnection } from 'peerjs';
-import { Mic, MicOff, Hand, Video, Send, X, LogIn, Shield, FileUp, Radio, User, Key } from 'lucide-react';
+import { Mic, MicOff, Hand, Video, Send, X, LogIn, Shield, FileUp, Radio, User, Key, Settings } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -29,8 +29,14 @@ interface PeerData {
 export default function App() {
   const [userName, setUserName] = useState<string>("");
   const [personalId, setPersonalId] = useState<string>("");
-  const [personalModCode, setPersonalModCode] = useState<string>("");
+  const [personalModCode, setPersonalModCode] = useState<string>(() => localStorage.getItem('smart_classroom_mod_code') || "");
   const [isJoined, setIsJoined] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashFade, setSplashFade] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [tempSessionId, setTempSessionId] = useState("");
+  const [tempModCode, setTempModCode] = useState("");
   const [peerId, setPeerId] = useState<string>("EN ATTENTE...");
   const [isProfessor, setIsProfessor] = useState(false);
   const [status, setStatus] = useState<'offline' | 'online'>('offline');
@@ -46,6 +52,7 @@ export default function App() {
   const [windowOffset, setWindowOffset] = useState(0);
   const [showModModal, setShowModModal] = useState(false);
   const [modCode, setModCode] = useState("");
+  const [modError, setModError] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -56,11 +63,55 @@ export default function App() {
   const chatBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Prepare Kora sound
+    const koraUrl = "https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a1b5a5.mp3";
+    audioRef.current = new Audio(koraUrl);
+    audioRef.current.loop = true;
+    audioRef.current.volume = 1.0;
+    audioRef.current.preload = "auto";
+    
+    audioRef.current.addEventListener('canplaythrough', () => {
+      console.log("Kora audio loaded and ready");
+    });
+
+    audioRef.current.addEventListener('error', (e) => {
+      console.error("Kora audio error:", e);
+      // Fallback if initial load fails
+      if (audioRef.current) {
+        audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+      }
+    });
+
     return () => {
+      audioRef.current?.pause();
       peerRef.current?.destroy();
       localStreamRef.current?.getTracks().forEach(track => track.stop());
     };
   }, []);
+
+  const playKora = () => {
+    if (audioRef.current) {
+      audioRef.current.volume = 1.0;
+      audioRef.current.play().then(() => {
+        console.log("Audio playing successfully");
+      }).catch(e => {
+        console.error("Audio play blocked or failed:", e);
+        // Try a different source if the first one fails
+        if (audioRef.current) {
+          audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
+          audioRef.current.play().catch(err => console.error("Fallback audio failed:", err));
+        }
+      });
+    }
+  };
+
+  const startApp = () => {
+    playKora();
+    setSplashFade(true);
+    setTimeout(() => {
+      setShowSplash(false);
+    }, 1000);
+  };
 
   useEffect(() => {
     if (chatBoxRef.current) {
@@ -70,11 +121,13 @@ export default function App() {
 
   const handleJoin = async () => {
     if (!userName.trim()) return alert("Veuillez entrer votre nom.");
+    // Ensure audio stops when entering the classroom to avoid noise during call
+    audioRef.current?.pause();
     setIsJoined(true);
     await init(userName);
   };
 
-  const init = async (name: string) => {
+  const init = async (name: string, customId?: string) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
@@ -85,13 +138,20 @@ export default function App() {
         localVideoRef.current.srcObject = stream;
       }
 
-      const monID = personalId.trim() ? (personalId.startsWith("SMART-") ? personalId : "SMART-" + personalId) : ("SMART-" + Math.random().toString(36).substring(2, 6).toUpperCase());
+      const monID = customId || (personalId.trim() ? (personalId.startsWith("SMART-") ? personalId : "SMART-" + personalId) : ("SMART-" + Math.random().toString(36).substring(2, 6).toUpperCase()));
+      setPersonalId(monID);
 
       const peer = new Peer(monID, {
         host: '0.peerjs.com',
         port: 443,
         secure: true,
-        debug: 1
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+          ]
+        }
       });
       peerRef.current = peer;
 
@@ -99,6 +159,11 @@ export default function App() {
         console.log("ID Professionnel généré : " + id);
         setPeerId(id);
         setStatus('online');
+      });
+
+      peer.on('disconnected', () => {
+        console.log("Connexion au serveur PeerJS perdue. Reconnexion...");
+        peer.reconnect();
       });
 
       peer.on('connection', conn => {
@@ -209,12 +274,36 @@ export default function App() {
     if (modCode === "BBA2026" || (personalModCode.trim() && modCode === personalModCode)) {
       setIsProfessor(true);
       setShowModModal(false);
+      setModCode(""); // Reset input
+      setModError(false);
       if (remoteVideoRef.current && localStreamRef.current) {
         remoteVideoRef.current.srcObject = localStreamRef.current;
       }
     } else {
-      alert("Code incorrect.");
+      setModError(true);
+      setTimeout(() => setModError(false), 3000);
     }
+  };
+
+  const updateSessionSettings = () => {
+    const formattedId = tempSessionId.trim() ? (tempSessionId.toUpperCase().startsWith("SMART-") ? tempSessionId.toUpperCase() : "SMART-" + tempSessionId.toUpperCase()) : personalId;
+    
+    setPersonalId(formattedId);
+    setPersonalModCode(tempModCode);
+    localStorage.setItem('smart_classroom_mod_code', tempModCode);
+    
+    if (formattedId !== peerId) {
+      peerRef.current?.destroy();
+      init(userName, formattedId);
+    }
+    
+    setShowSettingsModal(false);
+  };
+
+  const openSettings = () => {
+    setTempSessionId(personalId.replace("SMART-", ""));
+    setTempModCode(personalModCode);
+    setShowSettingsModal(true);
   };
 
   const leverMain = () => {
@@ -239,11 +328,6 @@ export default function App() {
 
   const toggleRecord = () => {
     setIsRecording(!isRecording);
-    if (!isRecording) {
-      addChat("Système: Enregistrement démarré.", "sys");
-    } else {
-      addChat("Système: Enregistrement arrêté.", "sys");
-    }
   };
 
   const envoyerMessage = () => {
@@ -297,6 +381,41 @@ export default function App() {
     activeConnectionsRef.current.forEach(c => c.send({ type: "PPT_OFF" }));
   };
 
+  if (showSplash) {
+    return (
+      <div className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-1000 ${splashFade ? 'opacity-0' : 'opacity-100'}`}>
+        <div className="text-center px-4">
+          <img 
+            src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1920&auto=format&fit=crop" 
+            alt="Smart Classroom African Collaboration" 
+            className="w-full max-w-4xl rounded-3xl shadow-2xl border border-white/10 mb-8 object-cover aspect-video"
+            referrerPolicy="no-referrer"
+          />
+          <h1 className="text-blue-500 font-extrabold text-5xl md:text-7xl tracking-tighter italic mb-2">Smart Classroom</h1>
+          <p className="text-gray-500 text-sm font-bold uppercase tracking-[0.5em] mb-8">L'excellence au cœur de l'Afrique</p>
+          
+          <div className="mt-8 flex flex-col items-center gap-6">
+            <button 
+              onClick={startApp}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-16 py-5 rounded-full font-black text-xl uppercase tracking-widest transition-all shadow-2xl shadow-blue-900/40 animate-bounce flex items-center gap-3"
+            >
+              <LogIn className="w-6 h-6" />
+              Commencer
+            </button>
+            
+            <button 
+              onClick={playKora}
+              className="text-[10px] text-blue-400/50 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
+            >
+              <Radio className="w-3 h-3 animate-pulse" />
+              Cliquer ici si vous n'entendez pas la Kora 🎵
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4">
@@ -321,36 +440,6 @@ export default function App() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">ID de Session Personnel (Optionnel)</label>
-              <div className="relative flex items-center">
-                <Shield className="absolute left-4 w-5 h-5 text-gray-500" />
-                <input
-                  type="text"
-                  value={personalId}
-                  onChange={(e) => setPersonalId(e.target.value.toUpperCase())}
-                  placeholder="Ex: MATHS, PHYSIQUE..."
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all"
-                />
-              </div>
-              <p className="text-[8px] text-gray-600 mt-2 ml-1 italic">Laissez vide pour un ID aléatoire. Les profs utilisent leur ID pour que les élèves les rejoignent.</p>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">Code Modérateur Personnel (Optionnel)</label>
-              <div className="relative flex items-center">
-                <Key className="absolute left-4 w-5 h-5 text-gray-500" />
-                <input
-                  type="password"
-                  value={personalModCode}
-                  onChange={(e) => setPersonalModCode(e.target.value)}
-                  placeholder="Votre code secret"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all"
-                />
-              </div>
-              <p className="text-[8px] text-gray-600 mt-2 ml-1 italic">Ce code vous permettra de débloquer les fonctions Professeur (en plus du code BBA2026).</p>
-            </div>
-
             <button
               onClick={handleJoin}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-blue-900/40"
@@ -371,21 +460,86 @@ export default function App() {
 
   return (
     <div className="text-gray-200 min-h-screen flex flex-col overflow-hidden bg-[#050505]">
+      {/* Modal Réglages */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-8 rounded-3xl w-full max-w-sm border border-white/10 shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                <Settings className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">Réglages Session</h2>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest">Configuration Professeur</p>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">ID de Session (ex: MATHS)</label>
+                <input
+                  type="text"
+                  value={tempSessionId}
+                  onChange={(e) => setTempSessionId(e.target.value.toUpperCase())}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 transition-all"
+                  placeholder="MATHS"
+                />
+                <p className="text-[8px] text-gray-600 mt-2 italic">L'ID final sera SMART-{tempSessionId || '...'}</p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">Code Modérateur Personnel</label>
+                <input
+                  type="password"
+                  value={tempModCode}
+                  onChange={(e) => setTempModCode(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 transition-all"
+                  placeholder="Votre code secret"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold text-xs uppercase transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={updateSessionSettings}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold text-xs uppercase transition-all shadow-lg shadow-blue-900/20"
+                >
+                  Appliquer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Moderator Modal */}
       {showModModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="glass-panel p-8 rounded-3xl w-full max-w-xs border border-white/10 shadow-2xl">
             <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-6 text-center">Accès Modérateur</h3>
-            <div className="relative flex items-center mb-6">
+            <div className="relative flex items-center mb-2">
               <Key className="absolute left-4 w-5 h-5 text-gray-500" />
               <input
                 type="password"
                 value={modCode}
-                onChange={(e) => setModCode(e.target.value)}
+                onChange={(e) => {
+                  setModCode(e.target.value);
+                  setModError(false);
+                }}
                 placeholder="Code d'accès"
-                className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all"
+                className={`w-full bg-white/5 border ${modError ? 'border-red-500' : 'border-white/10'} rounded-2xl pl-12 pr-5 py-4 text-sm outline-none focus:border-blue-500 transition-all`}
               />
             </div>
+            {modError && (
+              <p className="text-[10px] text-red-500 font-bold text-center mb-4 animate-bounce">
+                Code incorrect, vous vous êtes trompé !
+              </p>
+            )}
             <div className="flex gap-3">
               <button onClick={() => setShowModModal(false)} className="flex-1 bg-white/5 py-3 rounded-xl text-xs font-bold uppercase">Annuler</button>
               <button onClick={checkModCode} className="flex-1 bg-blue-600 py-3 rounded-xl text-xs font-bold uppercase">Valider</button>
@@ -445,7 +599,7 @@ export default function App() {
           </button>
           <button
             onClick={toggleRecord}
-            className={`${isRecording ? 'bg-red-600 border-red-500 text-white' : 'bg-red-600/10 border-red-500/30 text-red-500'} border px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-opacity-20 transition-all flex items-center gap-2`}
+            className={`${isRecording ? 'bg-red-600 border-red-500 text-white' : 'bg-red-600/10 border-red-500/30 text-red-500'} border px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2`}
           >
             <Radio className={`w-4 h-4 ${isRecording ? 'animate-pulse' : ''}`} />
             {isRecording ? 'STOP' : 'REC'}
@@ -510,7 +664,7 @@ export default function App() {
             >
               <div className="bg-orange-600 px-3 py-1 flex justify-between items-center cursor-move">
                 <span className="text-[10px] font-black uppercase text-white">{win.name}</span>
-                <button onClick={() => fermerFenetre(win.id)} className="text-white font-bold hover:scale-125 transition">
+                <button onClick={() => fermerFenetre(win.id)} className="text-white font-bold transition">
                   <X className="w-3 h-3" />
                 </button>
               </div>
@@ -534,13 +688,22 @@ export default function App() {
             <div id="admin-panel" className="flex flex-col border-b border-white/5">
               <div className="p-6">
                 <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-4">Gestion du Cours</h3>
-                <button
-                  onClick={() => document.getElementById('file-input')?.click()}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-800 py-4 rounded-2xl font-bold text-xs uppercase shadow-xl shadow-blue-900/30 hover:scale-[1.02] active:scale-95 transition-all mb-6 flex items-center justify-center gap-2"
-                >
-                  <FileUp className="w-4 h-4" />
-                  Diffuser un Document
-                </button>
+                <div className="flex flex-col gap-3 mb-6">
+                  <button
+                    onClick={openSettings}
+                    className="w-full bg-white/5 border border-white/10 py-3 rounded-xl font-bold text-[10px] uppercase hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Settings className="w-3 h-3 text-blue-500" />
+                    Réglages
+                  </button>
+                  <button
+                    onClick={() => document.getElementById('file-input')?.click()}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-800 py-4 rounded-2xl font-bold text-xs uppercase shadow-xl shadow-blue-900/30 transition-all flex items-center justify-center gap-2"
+                  >
+                    <FileUp className="w-4 h-4" />
+                    Diffuser un Document
+                  </button>
+                </div>
                 <input type="file" id="file-input" className="hidden" accept=".pdf,.doc,.docx,.ppt,.pptx" onChange={partagerDocument} />
 
                 <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] mb-4">Étudiants Actifs ({connectedStudents.length})</h3>
