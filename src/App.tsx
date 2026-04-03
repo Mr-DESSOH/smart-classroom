@@ -62,14 +62,43 @@ export default function App() {
         return value;
       });
     } catch (e) {
-      return '[Unserializable Object]';
+      return '"[Unserializable Object]"';
     }
+  };
+
+  // Safe logging to prevent cyclic errors in console
+  const safeLog = (...args: any[]) => {
+    const safeArgs = args.map(arg => {
+      if (typeof arg === 'object' && arg !== null) {
+        try {
+          return JSON.parse(safeStringify(arg));
+        } catch (e) {
+          return '[Unserializable Object]';
+        }
+      }
+      return arg;
+    });
+    console.log(...safeArgs);
+  };
+
+  const safeError = (...args: any[]) => {
+    const safeArgs = args.map(arg => {
+      if (typeof arg === 'object' && arg !== null) {
+        try {
+          return JSON.parse(safeStringify(arg));
+        } catch (e) {
+          return '[Unserializable Object]';
+        }
+      }
+      return arg;
+    });
+    console.error(...safeArgs);
   };
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      console.error("Global Error Caught:", event.error);
-      if (event.error?.message?.includes('cyclic object value')) {
+      safeError("Global Error Caught:", event.error);
+      if (event.error?.message?.includes('cyclic object value') || event.error?.message?.includes('circular structure')) {
         // Suppress cyclic errors from showing in UI but log them safely
         return;
       }
@@ -108,10 +137,10 @@ export default function App() {
       // Store the promise to handle potential race conditions with pause()
       playPromiseRef.current = audioRef.current.play();
       playPromiseRef.current.then(() => {
-        console.log("Audio playing successfully");
+        safeLog("Audio playing successfully");
         playPromiseRef.current = null;
       }).catch(e => {
-        console.error("Audio play blocked or failed:", e);
+        safeError("Audio play blocked or failed:", e);
         playPromiseRef.current = null;
       });
     }
@@ -179,13 +208,13 @@ export default function App() {
       peerRef.current = peer;
 
       peer.on('open', id => {
-        console.log("ID Professionnel généré : " + id);
+        safeLog("ID Professionnel généré : " + id);
         setPeerId(id);
         setStatus('online');
       });
 
       peer.on('disconnected', () => {
-        console.log("Connexion au serveur PeerJS perdue. Reconnexion...");
+        safeLog("Connexion au serveur PeerJS perdue. Reconnexion...");
         peer.reconnect();
       });
 
@@ -194,7 +223,7 @@ export default function App() {
       });
 
       peer.on('call', call => {
-        console.log("Réception d'un appel entrant...");
+        safeLog("Réception d'un appel entrant...");
         call.answer(localStreamRef.current!);
 
         call.on('stream', remoteStream => {
@@ -211,7 +240,7 @@ export default function App() {
       });
 
       peer.on('error', err => {
-        console.error("Type d'erreur PeerJS :", err.type);
+        safeError("Type d'erreur PeerJS :", err.type);
         if (err.type === 'peer-unavailable') {
           alert("Impossible de joindre ce cours. Vérifiez l'ID.");
         }
@@ -219,7 +248,7 @@ export default function App() {
 
     } catch (e) {
       alert("Accès Caméra/Micro refusé ou erreur d'initialisation. Vérifiez les permissions.");
-      console.error(e);
+      safeError(e);
       setIsJoined(false);
     }
   };
@@ -240,10 +269,10 @@ export default function App() {
           const safeHandshake = JSON.parse(safeStringify(handshakeData));
           conn.send(safeHandshake);
         } catch (err) {
-          console.error("Erreur d'envoi handshake:", err);
+          safeError("Erreur d'envoi handshake:", err);
         }
       } catch (err) {
-        console.error("Erreur lors de l'envoi du handshake:", err);
+        safeError("Erreur lors de l'envoi du handshake:", err);
       }
     });
 
@@ -290,14 +319,14 @@ export default function App() {
     if (!profId) return alert("Veuillez entrer l'ID SMART-XXXX du professeur");
     if (!peerRef.current) return;
 
-    console.log("Tentative de poignée de main avec : " + profId);
+    safeLog("Tentative de poignée de main avec : " + profId);
 
     const conn = peerRef.current.connect(profId, { reliable: true });
     setupData(conn, userName);
 
     const call = peerRef.current.call(profId, localStreamRef.current!);
     call.on('stream', stream => {
-      console.log("Flux vidéo reçu avec succès !");
+      safeLog("Flux vidéo reçu avec succès !");
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
         remoteVideoRef.current.onloadedmetadata = () => {
@@ -359,10 +388,10 @@ export default function App() {
         const safeSignal = JSON.parse(safeStringify(signalData));
         c.send(safeSignal);
       } catch (err) {
-        console.error("Erreur d'envoi signal main:", err);
+        safeError("Erreur d'envoi signal main:", err);
       }
       } catch (err) {
-        console.error("Erreur lors de l'envoi du signal de main levée:", err);
+        safeError("Erreur lors de l'envoi du signal de main levée:", err);
       }
     });
   };
@@ -386,7 +415,7 @@ export default function App() {
       try {
         c.send(String(message));
       } catch (err) {
-        console.error("Erreur lors de l'envoi du message chat:", err);
+        safeError("Erreur lors de l'envoi du message chat:", err);
       }
     });
     addChat(chatInput, 'moi', userName);
@@ -407,10 +436,10 @@ export default function App() {
         const safeAction = JSON.parse(safeStringify(actionData));
         conn.send(safeAction);
       } catch (err) {
-        console.error("Erreur d'envoi admin action:", err);
+        safeError("Erreur d'envoi admin action:", err);
       }
       } catch (err) {
-        console.error("Erreur action admin:", err);
+        safeError("Erreur action admin:", err);
       }
     }
   };
@@ -449,10 +478,10 @@ export default function App() {
             const safeDoc = JSON.parse(safeStringify(docData));
             c.send(safeDoc);
           } catch (err) {
-            console.error("Erreur d'envoi document:", err);
+            safeError("Erreur d'envoi document:", err);
           }
         } catch (err) {
-          console.error("Erreur lors de l'envoi du document:", err);
+          safeError("Erreur lors de l'envoi du document:", err);
         }
       });
     };
@@ -469,10 +498,10 @@ export default function App() {
         const safeOff = JSON.parse(safeStringify(offData));
         c.send(safeOff);
       } catch (err) {
-        console.error("Erreur d'envoi PPT_OFF:", err);
+        safeError("Erreur d'envoi PPT_OFF:", err);
       }
       } catch (err) {
-        console.error("Erreur fermeture document:", err);
+        safeError("Erreur fermeture document:", err);
       }
     });
   };
@@ -486,12 +515,23 @@ export default function App() {
             <p className="font-medium text-sm">{globalError}</p>
             <p className="text-[10px] opacity-70">Essayez d'actualiser la page si le problème persiste.</p>
           </div>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="ml-4 bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-[10px] font-bold uppercase"
-          >
-            Actualiser
-          </button>
+          <div className="flex gap-2 ml-4">
+            <button 
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }} 
+              className="bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg text-[10px] font-bold uppercase"
+            >
+              Vider Cache
+            </button>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-[10px] font-bold uppercase"
+            >
+              Actualiser
+            </button>
+          </div>
         </div>
       )}
       <audio 
@@ -499,13 +539,13 @@ export default function App() {
         loop
         crossOrigin="anonymous"
         onCanPlayThrough={() => {
-          console.log("Audio can play through");
+          safeLog("Audio can play through");
           setAudioLoaded(true);
         }}
         onError={(e) => {
-          console.error("Audio error event:", e);
+          safeError("Audio error event:", e);
           if (audioRef.current && audioRef.current.src !== "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3") {
-            console.log("Switching to fallback audio...");
+            safeLog("Switching to fallback audio...");
             audioRef.current.src = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3";
             audioRef.current.load();
           }
