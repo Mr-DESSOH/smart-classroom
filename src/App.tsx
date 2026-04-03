@@ -48,6 +48,36 @@ export default function App() {
   const [connectedStudents, setConnectedStudents] = useState<Student[]>([]);
   const [handRaised, setHandRaised] = useState(false);
   const [isMicOn, setIsMicOn] = useState(true);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // Safe stringify helper to prevent cyclic object errors
+  const safeStringify = (obj: any) => {
+    try {
+      const cache = new Set();
+      return JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) return '[Circular]';
+          cache.add(value);
+        }
+        return value;
+      });
+    } catch (e) {
+      return '[Unserializable Object]';
+    }
+  };
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error("Global Error Caught:", event.error);
+      if (event.error?.message?.includes('cyclic object value')) {
+        // Suppress cyclic errors from showing in UI but log them safely
+        return;
+      }
+      setGlobalError(event.error?.message || "Une erreur inattendue est survenue.");
+    };
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
   const [isRecording, setIsRecording] = useState(false);
   const [pptUrl, setPptUrl] = useState<string | null>(null);
   const [openWindows, setOpenWindows] = useState<{ id: string; name: string }[]>([]);
@@ -138,7 +168,7 @@ export default function App() {
         host: '0.peerjs.com',
         port: 443,
         secure: true,
-        debug: 1,
+        debug: 0, // Set to 0 for production to avoid potential cyclic logging errors
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
@@ -206,7 +236,12 @@ export default function App() {
           type: "HANDSHAKE" as const, 
           name: String(currentUserName) 
         };
-        conn.send(handshakeData);
+        try {
+          const safeHandshake = JSON.parse(safeStringify(handshakeData));
+          conn.send(safeHandshake);
+        } catch (err) {
+          console.error("Erreur d'envoi handshake:", err);
+        }
       } catch (err) {
         console.error("Erreur lors de l'envoi du handshake:", err);
       }
@@ -320,7 +355,12 @@ export default function App() {
           name: String(userName),
           peerId: String(currentPeerId)
         };
-        c.send(signalData);
+        try {
+        const safeSignal = JSON.parse(safeStringify(signalData));
+        c.send(safeSignal);
+      } catch (err) {
+        console.error("Erreur d'envoi signal main:", err);
+      }
       } catch (err) {
         console.error("Erreur lors de l'envoi du signal de main levée:", err);
       }
@@ -363,7 +403,12 @@ export default function App() {
       try {
         // Explicitly create a clean, non-circular object
         const actionData = { type: String(type) as any };
-        conn.send(actionData);
+        try {
+        const safeAction = JSON.parse(safeStringify(actionData));
+        conn.send(safeAction);
+      } catch (err) {
+        console.error("Erreur d'envoi admin action:", err);
+      }
       } catch (err) {
         console.error("Erreur action admin:", err);
       }
@@ -400,7 +445,12 @@ export default function App() {
             type: "PPT_ON" as const, 
             url: String(url) 
           };
-          c.send(docData);
+          try {
+            const safeDoc = JSON.parse(safeStringify(docData));
+            c.send(safeDoc);
+          } catch (err) {
+            console.error("Erreur d'envoi document:", err);
+          }
         } catch (err) {
           console.error("Erreur lors de l'envoi du document:", err);
         }
@@ -415,7 +465,12 @@ export default function App() {
       try {
         // Explicitly create a clean, non-circular object
         const offData = { type: "PPT_OFF" as const };
-        c.send(offData);
+        try {
+        const safeOff = JSON.parse(safeStringify(offData));
+        c.send(safeOff);
+      } catch (err) {
+        console.error("Erreur d'envoi PPT_OFF:", err);
+      }
       } catch (err) {
         console.error("Erreur fermeture document:", err);
       }
@@ -424,6 +479,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white overflow-hidden font-sans selection:bg-blue-500/30">
+      {globalError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[300] bg-red-600 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce">
+          <X className="w-5 h-5 cursor-pointer" onClick={() => setGlobalError(null)} />
+          <div className="flex flex-col">
+            <p className="font-medium text-sm">{globalError}</p>
+            <p className="text-[10px] opacity-70">Essayez d'actualiser la page si le problème persiste.</p>
+          </div>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="ml-4 bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-[10px] font-bold uppercase"
+          >
+            Actualiser
+          </button>
+        </div>
+      )}
       <audio 
         ref={audioRef}
         loop
@@ -551,6 +621,16 @@ export default function App() {
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 transition-all"
                   placeholder="Votre code secret"
                 />
+              </div>
+
+              <div className="pt-4 border-t border-white/5">
+                <button
+                  onClick={playKora}
+                  className="w-full bg-orange-600/20 hover:bg-orange-600/30 text-orange-500 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                >
+                  <Radio className="w-4 h-4" />
+                  Tester le Son (Kora)
+                </button>
               </div>
 
               <div className="flex gap-3 pt-2">
